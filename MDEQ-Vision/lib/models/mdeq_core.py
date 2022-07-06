@@ -178,8 +178,6 @@ class MDEQModule(nn.Module):
         An MDEQ layer (note that MDEQ only has one layer). 
         """
         super(MDEQModule, self).__init__()
-        self._check_branches(
-            num_branches, blocks, num_blocks, num_channels, big_kernels)
 
         self.num_branches = num_branches
         self.num_channels = num_channels
@@ -193,28 +191,6 @@ class MDEQModule(nn.Module):
                 ('conv', nn.Conv2d(num_channels[i], num_channels[i], kernel_size=1, bias=False)),
                 ('gnorm', nn.GroupNorm(NUM_GROUPS // 2, num_channels[i], affine=POST_GN_AFFINE))
             ])) for i in range(num_branches)])
-
-    def _check_branches(self, num_branches, blocks, num_blocks, num_channels, big_kernels):
-        """
-        To check if the config file is consistent
-        """
-        if num_branches != len(num_blocks):
-            error_msg = 'NUM_BRANCHES({}) <> NUM_BLOCKS({})'.format(
-                num_branches, len(num_blocks))
-            logger.error(error_msg)
-            raise ValueError(error_msg)
-
-        if num_branches != len(num_channels):
-            error_msg = 'NUM_BRANCHES({}) <> NUM_CHANNELS({})'.format(
-                num_branches, len(num_channels))
-            logger.error(error_msg)
-            raise ValueError(error_msg)
-        
-        if num_branches != len(big_kernels):
-            error_msg = 'NUM_BRANCHES({}) <> BIG_KERNELS({})'.format(
-                num_branches, len(big_kernels))
-            logger.error(error_msg)
-            raise ValueError(error_msg)
     
     def _wnorm(self):
         """
@@ -243,7 +219,8 @@ class MDEQModule(nn.Module):
 
     def _make_one_branch(self, branch_index, block, num_blocks, num_channels, big_kernels, stride=1, dropout=0.0):
         """
-        Make a specific branch indexed by `branch_index`. This branch contains `num_blocks` residual blocks of type `block`.
+        Make a specific branch indexed by `branch_index`.
+        This branch contains `num_blocks` residual blocks of type `block`.
         """
         layers = nn.ModuleList()
         n_channel = num_channels[branch_index]
@@ -386,22 +363,49 @@ class MDEQNet(nn.Module):
         BLOCK_GN_AFFINE = cfg['MODEL']['BLOCK_GN_AFFINE']
         FUSE_GN_AFFINE = cfg['MODEL']['FUSE_GN_AFFINE']
         POST_GN_AFFINE = cfg['MODEL']['POST_GN_AFFINE']
+
+        self._validate_cfg()
+
+    def _validate_cfg()
+        num_branches = self.fullstage_cfg['NUM_BRANCHES']
+        num_blocks = self.fullstage_cfg['NUM_BLOCKS']
+        block_type = self.fullstage_cfg[layer_config['BLOCK']]
+        big_kernels = self.fullstage_cfg['BIG_KERNELS']
+
+        if self.num_branches != len(num_blocks):
+            error_msg = 'NUM_BRANCHES({}) must equal NUM_BLOCKS({})'.format(
+                num_branches, len(num_blocks))
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+
+        if num_branches != len(num_channels):
+            error_msg = 'NUM_BRANCHES({}) must equal NUM_CHANNELS({})'.format(
+                num_branches, len(num_channels))
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+
+        if num_branches != len(big_kernels):
+            error_msg = 'NUM_BRANCHES({}) must equal BIG_KERNELS({})'.format(
+                num_branches, len(big_kernels))
+            logger.error(error_msg)
+            raise ValueError(error_msg)
             
     def _make_stage(self, layer_config, num_channels, dropout=0.0):
         """
         Build an MDEQ block with the given hyperparameters
         """
-        num_modules = layer_config['NUM_MODULES']
         num_branches = layer_config['NUM_BRANCHES']
         num_blocks = layer_config['NUM_BLOCKS']
         block_type = blocks_dict[layer_config['BLOCK']]
         big_kernels = layer_config['BIG_KERNELS']
-        return MDEQModule(num_branches, block_type, num_blocks, num_channels, big_kernels, dropout=dropout)
+        return MDEQModule(num_branches, block_type, num_blocks, num_channels,
+                          big_kernels, dropout=dropout)
 
     def _forward(self, x, train_step=-1, compute_jac_loss=True, spectral_radius_mode=False, writer=None, **kwargs):
         """
-        The core MDEQ module. In the starting phase, we can (optionally) enter a shallow stacked f_\theta training mode
-        to warm up the weights (specified by the self.pretrain_steps; see below)
+        The core MDEQ module. In the starting phase, we can (optionally) enter
+        a shallow stacked f_\theta training mode to warm up the weights
+        (specified by the self.pretrain_steps; see below)
         """
         num_branches = self.num_branches
         f_thres = kwargs.get('f_thres', self.f_thres)
@@ -411,9 +415,10 @@ class MDEQNet(nn.Module):
         
         # Inject only to the highest resolution...
         x_list = [self.stage0(x) if self.stage0 else x]
-        for i in range(1, num_branches):
+        for channel_count in self.num_channels[1:]:
+            # ... and the rest are all zeros
             bsz, _, H, W = x_list[-1].shape
-            x_list.append(torch.zeros(bsz, self.num_channels[i], H//2, W//2).to(x))   # ... and the rest are all zeros
+            x_list.append(torch.zeros(bsz, channel_count, H//2, W//2).to(x))
             
         z_list = [torch.zeros_like(elem) for elem in x_list]
         z1 = list2vec(z_list)
@@ -429,7 +434,7 @@ class MDEQNet(nn.Module):
         
         # Multiscale Deep Equilibrium!
         if not deq_mode:
-            for layer_ind in range(self.num_layers): 
+            for _ in range(self.num_layers):
                 z1 = func(z1)
             new_z1 = z1
 
