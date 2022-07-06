@@ -39,13 +39,13 @@ logger = logging.getLogger(__name__)
 
 
 class BasicBlock(nn.Module):
+    """
+    A canonical residual block with two 3x3 convolutions and an intermediate ReLU. Corresponds to Figure 2
+    in the paper.
+    """
     expansion = 1
 
     def __init__(self, inplanes, planes, stride=1, downsample=None, n_big_kernels=0, dropout=0.0, wnorm=False):
-        """
-        A canonical residual block with two 3x3 convolutions and an intermediate ReLU. Corresponds to Figure 2
-        in the paper.
-        """
         super(BasicBlock, self).__init__()
         conv1 = conv5x5 if n_big_kernels >= 1 else conv3x3
         conv2 = conv5x5 if n_big_kernels >= 2 else conv3x3
@@ -102,14 +102,23 @@ blocks_dict = { 'BASIC': BasicBlock }
 
 
 class BranchNet(nn.Module):
+    """
+    The residual block part of each resolution stream in Figure 1.
+    Note Figure 1's residual block part shows only one residual block.
+    The residual block used is the class BasicBlock.
+    """
+
     def __init__(self, blocks): # blocks: list[BasicBlock]
-        """
-        The residual block part of each resolution stream
-        """
         super().__init__()
         self.blocks = blocks
     
     def forward(self, x, injection=None):
+        """
+        Feeds x through all of the residual blocks in the residual block part
+        of each resolution stream in Figure 1.
+        Note all the provided experiment config files use one residual block.
+        (len(self.blocks) = 1).
+        """
         y = self.blocks[0](x, injection)
         for block in self.blocks[1:]:
             y = block(y)
@@ -239,7 +248,7 @@ class MDEQModule(nn.Module):
         layers = nn.ModuleList()
         n_channel = num_channels[branch_index]
         n_big_kernels = big_kernels[branch_index]
-        for i in range(num_blocks[branch_index]):
+        for _ in range(num_blocks[branch_index]):
             layers.append(block(n_channel, n_channel, n_big_kernels=n_big_kernels, dropout=dropout))
         return BranchNet(layers)
 
@@ -283,23 +292,19 @@ class MDEQModule(nn.Module):
         a parallel multiscale fusion step.
         """
         if injection is None:
-            injection = [0] * len(x)
-        if self.num_branches == 1:
-            return [self.branches[0](x[0], injection[0])]
+            injection = torch.zeros(len(x)) # len(x) = x.size(dim=0)
 
         # Step 1: Per-resolution residual block
-        x_block = []
-        for i in range(self.num_branches):
-            x_block.append(self.branches[i](x[i], injection[i]))
-        
+        x_block = [branch(x[i], injection[i]) for i, branch in enumerate(self.branches)]
+        if len(x_block) == 1:
+            return x_block
+
         # Step 2: Multiscale fusion
-        x_fuse = []
-        for i in range(self.num_branches):
-            y = 0
-            # Start fusing all #j -> #i up/down-samplings
-            for j in range(self.num_branches):
-                y += x_block[j] if i == j else self.fuse_layers[i][j](x_block[j])
+        for i, fuse_layer in enumerate(self.fuse_layers):
+            # sampleModule is either a DownsampleModule or an UpsampleModule
+            y = sum(x_block[j] if i == j else sampleModule(x_block[j]) for j, sampleModule in enumerate(fuse_layer))
             x_fuse.append(self.post_fuse_layers[i](y))
+
         return x_fuse
 
 
