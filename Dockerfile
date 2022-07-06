@@ -1,4 +1,4 @@
-FROM pytorch/pytorch:1.12.0-cuda11.3-cudnn8-runtime
+FROM pytorch/pytorch:1.11.0-cuda11.3-cudnn8-runtime
 
 LABEL taost=taost
 
@@ -14,13 +14,7 @@ ENV PORT=8800
 
 EXPOSE 8800
 
-WORKDIR ./DEQ-Sequence
+WORKDIR ./MDEQ-Vision
 
-# CMD bash penn_deq_transformer.sh train --cuda --multi_gpu --f_solver broyden --f_thres 30 --b_thres 40
-
-# CMD python train_transformer.py --name taostPennTreebank --work_dir . --cuda --data ./data/penn/ --dataset ptb
-
-CMD bash penn_deq_transformer.sh train --cuda --f_solver broyden --f_thres 30 --b_thres 40
-
-# CMD python -c 'import torch; print(torch.version.cuda, torch.cuda.is_available())'
+CMD python tools/cls_train.py --cfg experiments/cifar/cls_mdeq_TINY.yaml
 
