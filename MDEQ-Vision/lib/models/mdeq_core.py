@@ -300,6 +300,7 @@ class MDEQModule(nn.Module):
             return x_block
 
         # Step 2: Multiscale fusion
+        x_fuse = []
         for i, fuse_layer in enumerate(self.fuse_layers):
             # sampleModule is either a DownsampleModule or an UpsampleModule
             y = sum(x_block[j] if i == j else sampleModule(x_block[j]) for j, sampleModule in enumerate(fuse_layer))
