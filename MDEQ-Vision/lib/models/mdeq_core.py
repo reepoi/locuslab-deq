@@ -102,7 +102,7 @@ blocks_dict = { 'BASIC': BasicBlock }
 
 
 class BranchNet(nn.Module):
-    def __init__(self, blocks):
+    def __init__(self, blocks: list[BasicBlock]):
         """
         The residual block part of each resolution stream
         """
@@ -110,10 +110,9 @@ class BranchNet(nn.Module):
         self.blocks = blocks
     
     def forward(self, x, injection=None):
-        blocks = self.blocks
-        y = blocks[0](x, injection)
-        for i in range(1, len(blocks)):
-            y = blocks[i](y)
+        y = self.blocks[0](x, injection)
+        for block in blocks[1:]:
+            y = block(y)
         return y
     
     
