@@ -180,6 +180,7 @@ def main():
         train_dataset,
         batch_size=config.TRAIN.BATCH_SIZE_PER_GPU*len(gpus),
         shuffle=True,
+        generator=torch.Generator(device='cuda'),
         num_workers=config.WORKERS,
         pin_memory=True
     )
