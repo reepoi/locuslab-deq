@@ -21,7 +21,6 @@ from utils.exp_utils import create_exp_dir
 from utils.data_parallel import BalancedDataParallel
 from torch.utils.tensorboard import SummaryWriter
 
-print('IN THE PYTHON JUNGLE')
 parser = argparse.ArgumentParser(description='PyTorch DEQ Sequence Model')
 parser.add_argument('--data', type=str, default='../data/wikitext-103',
                     help='location of the data corpus (default to the WT103 path)')
@@ -104,7 +103,7 @@ parser.add_argument('--local_size', type=int, default=0,
                     help='local horizon size')
 
 # DEQ related [Bai et al. 2019]
-parser.add_argument('--f_solver', default='anderson', type=str,
+parser.add_argument('--f_solver', default='broyden', type=str,
                     choices=['anderson', 'broyden'],
                     help='forward solver to use (only anderson and broyden supported now)')
 parser.add_argument('--b_solver', default='broyden', type=str,
@@ -243,7 +242,6 @@ if args.adaptive:
     assert args.dataset in ['wt103']
     cutoffs = [20000, 40000, 200000]
     tie_projs += [True] * len(cutoffs)
-
 print('DATA LOADED')
 ###############################################################################
 # Build the model

@@ -17,7 +17,7 @@ fi
 
 echo "- Downloading Penn Treebank (PTB)"
 if [[ ! -d 'penn' ]]; then
-    wget --quiet --continue http://www.fit.vutbr.cz/~imikolov/rnnlm/simple-examples.tgz
+    wget --continue http://www.fit.vutbr.cz/~imikolov/rnnlm/simple-examples.tgz
     tar -xzf simple-examples.tgz
 
     mkdir -p penn
