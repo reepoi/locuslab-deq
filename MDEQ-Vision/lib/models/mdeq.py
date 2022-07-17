@@ -96,14 +96,11 @@ class MDEQClsNet(MDEQNet):
         head_channels = self.head_channels
         
         # Increasing the number of channels on each resolution when doing classification. 
-        incre_modules = []
-        for i, channels  in enumerate(pre_stage_channels):
-            incre_module = self._make_layer(head_block, channels, head_channels[i], blocks=1, stride=1)
-            incre_modules.append(incre_module)
-        incre_modules = nn.ModuleList(incre_modules)
+        incre_modules = nn.ModuleList(self._make_layer(head_block, psc, hc, blocks=1, stride=1)
+                                        for hc, psc in zip(head_channels, pre_stage_channels, strict=True))
             
         # Downsample the high-resolution streams to perform classification
-        downsamp_modules = []
+        downsamp_modules = nn.ModuleList()
         for i in range(len(pre_stage_channels)-1):
             in_channels = head_channels[i] * head_block.expansion
             out_channels = head_channels[i+1] * head_block.expansion
@@ -111,13 +108,13 @@ class MDEQClsNet(MDEQNet):
                                             nn.BatchNorm2d(out_channels, momentum=BN_MOMENTUM),
                                             nn.ReLU(inplace=True))
             downsamp_modules.append(downsamp_module)
-        downsamp_modules = nn.ModuleList(downsamp_modules)
 
         # Final FC layers
         final_layer = nn.Sequential(nn.Conv2d(head_channels[len(pre_stage_channels)-1] * head_block.expansion,
                                               self.final_chansize, kernel_size=1),
                                     nn.BatchNorm2d(self.final_chansize, momentum=BN_MOMENTUM),
                                     nn.ReLU(inplace=True))
+
         return incre_modules, downsamp_modules, final_layer
 
     def _make_layer(self, block, inplanes, planes, blocks, stride=1):
