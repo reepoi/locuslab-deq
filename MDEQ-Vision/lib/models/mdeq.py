@@ -97,7 +97,7 @@ class MDEQClsNet(MDEQNet):
         
         # Increasing the number of channels on each resolution when doing classification. 
         incre_modules = nn.ModuleList(self._make_layer(head_block, psc, hc, blocks=1, stride=1)
-                                        for hc, psc in zip(head_channels, pre_stage_channels, strict=True))
+                                        for hc, psc in zip(head_channels, pre_stage_channels)) #, strict=True))
             
         # Downsample the high-resolution streams to perform classification
         downsamp_modules = nn.ModuleList()

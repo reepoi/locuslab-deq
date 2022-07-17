@@ -201,7 +201,7 @@ class MDEQModule(nn.Module):
         Apply weight normalization to the learnable parameters of MDEQ
         """
         self.post_fuse_fns = []
-        for branch, pfl in zip(self.branches, self.post_fuse_layers, strict=True):
+        for branch, pfl in zip(self.branches, self.post_fuse_layers): #, strict=True):
             for block in branch.blocks:
                 block._wnorm()
             conv, fn = weight_norm(pfl.conv, names=['weight'], dim=0)
@@ -228,7 +228,7 @@ class MDEQModule(nn.Module):
         Each branch contains `num_blocks` of resdiual blocks of type `block_class`.
         """
         branches = nn.ModuleList()
-        for nc, nbk, nb in zip(num_channels, big_kernels, num_blocks, strict=True):
+        for nc, nbk, nb in zip(num_channels, big_kernels, num_blocks): #, strict=True):
             nb_blocks = [block_class(nc, nc, n_big_kernels=nbk, dropout=dropout) for _ in range(nb)]
             branches.append(BranchNet(nb_blocks))
         return nn.ModuleList(branches)
