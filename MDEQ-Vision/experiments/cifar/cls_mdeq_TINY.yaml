@@ -78,7 +78,7 @@ TRAIN:
   - 90
   OPTIMIZER: adam # Optimizer
   LR: 0.001 # Learning Rate
-  WD: 0 # Weight Decay
+  WD: 0.0 # Weight Decay
   MOMENTUM: 0.95
   NESTEROV: true # Nesterov Momentum
   SHUFFLE: true
