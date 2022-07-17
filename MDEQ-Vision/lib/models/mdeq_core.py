@@ -364,7 +364,7 @@ class MDEQNet(nn.Module):
     def _validate_cfg(self):
         num_branches = self.fullstage_cfg['NUM_BRANCHES']
         num_blocks = self.fullstage_cfg['NUM_BLOCKS']
-        block_class = self.fullstage_cfg[layer_config['BLOCK']]
+        block_class = blocks_dict[self.fullstage_cfg['BLOCK']]
         big_kernels = self.fullstage_cfg['BIG_KERNELS']
 
         error_msg = ''
