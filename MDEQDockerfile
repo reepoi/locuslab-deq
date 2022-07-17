@@ -8,7 +8,7 @@ RUN pip install -r requirements.txt
 
 COPY . .
 
-ENV CUDA_VISIBLE_DEVICES=7
+ENV CUDA_VISIBLE_DEVICES=6,7
 
 ENV PORT=8800
 

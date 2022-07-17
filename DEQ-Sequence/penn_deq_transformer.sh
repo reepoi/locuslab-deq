@@ -2,7 +2,7 @@
 
 if [[ $1 == 'train' ]]; then
     echo 'Run training (DEQ-Transformer)...'
-    python3 train_transformer.py \
+    python -m pdb train_transformer.py \
         --name taostPennTreebank \
         --cuda \
         --data ./data/penn/ \
