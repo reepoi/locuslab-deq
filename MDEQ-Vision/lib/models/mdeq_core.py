@@ -135,7 +135,7 @@ class DownsampleModule(nn.Module):
         convs = []
         inp_chan = num_channels[in_res]
         out_chan = num_channels[out_res]
-        self.level_diff = level_diff = out_res - in_res
+        level_diff = out_res - in_res
         
         kwargs = {"kernel_size": 3, "stride": 2, "padding": 1, "bias": False}
         for k in range(level_diff):
@@ -161,7 +161,7 @@ class UpsampleModule(nn.Module):
         # upsample (in_res=j, out_res=i)
         inp_chan = num_channels[in_res]
         out_chan = num_channels[out_res]
-        self.level_diff = level_diff = in_res - out_res
+        level_diff = in_res - out_res
         
         self.net = nn.Sequential(OrderedDict([
                         ('conv', nn.Conv2d(inp_chan, out_chan, kernel_size=1, bias=False)),
@@ -173,9 +173,11 @@ class UpsampleModule(nn.Module):
 
     
 class MDEQModule(nn.Module):
-    def __init__(self, num_branches, blocks, num_blocks, num_channels, big_kernels, dropout=0.0):
+    def __init__(self, num_branches, block_class, num_blocks, num_channels, big_kernels, dropout=0.0):
         """
         An MDEQ layer (note that MDEQ only has one layer). 
+        This runs the transformations in the large tan box in Figure 1:
+        residual blocks, and multi-resolution fusion.
         """
         super(MDEQModule, self).__init__()
 
@@ -183,26 +185,28 @@ class MDEQModule(nn.Module):
         self.num_channels = num_channels
         self.big_kernels = big_kernels
 
-        self.branches = self._make_branches(num_branches, blocks, num_blocks, num_channels, big_kernels, dropout=dropout)
+        self.branches = self._make_branches(num_branches, block_class, num_blocks, num_channels, big_kernels, dropout=dropout)
         self.fuse_layers = self._make_fuse_layers()
-        self.post_fuse_layers = nn.ModuleList([
-            nn.Sequential(OrderedDict([
-                ('relu', nn.ReLU(False)),
-                ('conv', nn.Conv2d(num_channels[i], num_channels[i], kernel_size=1, bias=False)),
-                ('gnorm', nn.GroupNorm(NUM_GROUPS // 2, num_channels[i], affine=POST_GN_AFFINE))
-            ])) for i in range(num_branches)])
+        self.post_fuse_layers = nn.ModuleList()
+        for nc in num_channels:
+            pfl = nn.Sequential(OrderedDict([
+                    ('relu', nn.ReLU(False)),
+                    ('conv', nn.Conv2d(nc, nc, kernel_size=1, bias=False)),
+                    ('gnorm', nn.GroupNorm(NUM_GROUPS // 2, nc, affine=POST_GN_AFFINE))
+            ]))
+            self.post_fuse_layers.append(pfl)
     
     def _wnorm(self):
         """
         Apply weight normalization to the learnable parameters of MDEQ
         """
         self.post_fuse_fns = []
-        for i, branch in enumerate(self.branches):
+        for branch, pfl in zip(self.branches, self.post_fuse_layers, strict=True):
             for block in branch.blocks:
                 block._wnorm()
-            conv, fn = weight_norm(self.post_fuse_layers[i].conv, names=['weight'], dim=0)
+            conv, fn = weight_norm(pfl.conv, names=['weight'], dim=0)
             self.post_fuse_fns.append(fn)
-            self.post_fuse_layers[i].conv = conv
+            pfl.conv = conv
         
         # Throw away garbage
         torch.cuda.empty_cache()
@@ -214,32 +218,25 @@ class MDEQModule(nn.Module):
         for i, branch in enumerate(self.branches):
             for block in branch.blocks:
                 block._reset(*xs[i].shape)
-            if 'post_fuse_fns' in self.__dict__:
+            if self.wnorm:
                 self.post_fuse_fns[i].reset(self.post_fuse_layers[i].conv)    # Re-compute (...).conv.weight using _g and _v
 
-    def _make_one_branch(self, branch_index, block, num_blocks, num_channels, big_kernels, stride=1, dropout=0.0):
-        """
-        Make a specific branch indexed by `branch_index`.
-        This branch contains `num_blocks` residual blocks of type `block`.
-        """
-        layers = nn.ModuleList()
-        n_channel = num_channels[branch_index]
-        n_big_kernels = big_kernels[branch_index]
-        for _ in range(num_blocks[branch_index]):
-            layers.append(block(n_channel, n_channel, n_big_kernels=n_big_kernels, dropout=dropout))
-        return BranchNet(layers)
-
-    def _make_branches(self, num_branches, block, num_blocks, num_channels, big_kernels, dropout=0.0):
+    def _make_branches(self, num_branches, block_class, num_blocks, num_channels, big_kernels, dropout=0.0):
         """
         Make the residual block (s; default=1 block) of MDEQ's f_\theta layer. Specifically,
         it returns `branch_layers[i]` gives the module that operates on input from resolution i.
+        Each branch contains `num_blocks` of resdiual blocks of type `block_class`.
         """
-        branch_layers = [self._make_one_branch(i, block, num_blocks, num_channels, big_kernels, dropout=dropout) for i in range(num_branches)]
-        return nn.ModuleList(branch_layers)
+        branches = nn.ModuleList()
+        for nc, nbk, nb in zip(num_channels, big_kernels, num_blocks, strict=True):
+            nb_blocks = [block_class(nc, nc, n_big_kernels=nbk, dropout=dropout) for _ in range(nb)]
+            branches.append(BranchNet(nb_blocks))
+        return nn.ModuleList(branches)
 
     def _make_fuse_layers(self):
         """
         Create the multiscale fusion layer (which does simultaneous up- and downsamplings).
+        Multi-resolution Fusion part of Figure 1.
         """
         if self.num_branches == 1:
             return None
@@ -259,9 +256,6 @@ class MDEQModule(nn.Module):
 
         # fuse_layers[i][j] gives the (series of) conv3x3s that convert input from branch j to branch i
         return nn.ModuleList(fuse_layers)
-
-    def get_num_inchannels(self):
-        return self.num_channels
 
     def forward(self, x, injection, *args):
         """
@@ -370,24 +364,17 @@ class MDEQNet(nn.Module):
     def _validate_cfg(self):
         num_branches = self.fullstage_cfg['NUM_BRANCHES']
         num_blocks = self.fullstage_cfg['NUM_BLOCKS']
-        block_type = blocks_dict[self.fullstage_cfg['BLOCK']]
+        block_class = self.fullstage_cfg[layer_config['BLOCK']]
         big_kernels = self.fullstage_cfg['BIG_KERNELS']
 
+        error_msg = ''
         if self.num_branches != len(num_blocks):
-            error_msg = 'NUM_BRANCHES({}) must equal NUM_BLOCKS({})'.format(
-                num_branches, len(num_blocks))
-            logger.error(error_msg)
-            raise ValueError(error_msg)
-
-        if num_branches != len(self.num_channels):
-            error_msg = 'NUM_BRANCHES({}) must equal NUM_CHANNELS({})'.format(
-                num_branches, len(self.num_channels))
-            logger.error(error_msg)
-            raise ValueError(error_msg)
-
-        if num_branches != len(big_kernels):
-            error_msg = 'NUM_BRANCHES({}) must equal BIG_KERNELS({})'.format(
-                num_branches, len(big_kernels))
+            error_msg = 'Must have len(NUM_BLOCKS) equal NUM_BRANCHES'
+        elif num_branches != len(self.num_channels):
+            error_msg = 'Must have len(NUM_CHANNELS) equal NUM_BRANCHES'
+        elif num_branches != len(big_kernels):
+            error_msg = 'Must have len(BIG_KERNELS) equal NUM_BRANCHES'
+        if error_msg:
             logger.error(error_msg)
             raise ValueError(error_msg)
             
@@ -397,9 +384,9 @@ class MDEQNet(nn.Module):
         """
         num_branches = layer_config['NUM_BRANCHES']
         num_blocks = layer_config['NUM_BLOCKS']
-        block_type = blocks_dict[layer_config['BLOCK']]
+        block_class = blocks_dict[layer_config['BLOCK']]
         big_kernels = layer_config['BIG_KERNELS']
-        return MDEQModule(num_branches, block_type, num_blocks, num_channels,
+        return MDEQModule(num_branches, block_class, num_blocks, num_channels,
                           big_kernels, dropout=dropout)
 
     def _forward(self, x, train_step=-1, compute_jac_loss=True, spectral_radius_mode=False, writer=None, **kwargs):
@@ -414,11 +401,11 @@ class MDEQNet(nn.Module):
         x = self.downsample(x)
         rank = get_rank()
         
-        # Inject only to the highest resolution...
+        # Inject only to the highest resolution.
+        # The remaining injections of x_list are zero.
         x_list = [self.stage0(x) if self.stage0 else x]
         bsz, _, H, W = x_list[-1].shape
         for channel_count in self.num_channels[1:]:
-            # ... and the rest are all zeros
             bsz, _, H, W = x_list[-1].shape
             x_list.append(torch.zeros(bsz, channel_count, H//2, W//2).to(x))
             
