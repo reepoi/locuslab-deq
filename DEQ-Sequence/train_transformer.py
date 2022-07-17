@@ -198,6 +198,9 @@ if args.d_embed < 0:
 
 assert args.batch_size % args.batch_chunk == 0
 
+import pdb
+pdb.set_trace()
+
 args.work_dir = '{}-{}'.format(args.work_dir, args.dataset)
 timestamp = time.strftime('%Y%m%d-%H%M%S')
 if args.restart_dir:
@@ -593,6 +596,7 @@ if args.eval:
 # At any point you can hit Ctrl + C to break out of training early.
 try:
     for epoch in itertools.count(start=1):
+        pdb.set_trace()
         print('Epoch: ', epoch)
         train()
         if train_step == args.max_step:

@@ -367,10 +367,10 @@ class MDEQNet(nn.Module):
 
         self._validate_cfg()
 
-    def _validate_cfg()
+    def _validate_cfg(self):
         num_branches = self.fullstage_cfg['NUM_BRANCHES']
         num_blocks = self.fullstage_cfg['NUM_BLOCKS']
-        block_type = self.fullstage_cfg[layer_config['BLOCK']]
+        block_type = blocks_dict[self.fullstage_cfg['BLOCK']]
         big_kernels = self.fullstage_cfg['BIG_KERNELS']
 
         if self.num_branches != len(num_blocks):
@@ -379,9 +379,9 @@ class MDEQNet(nn.Module):
             logger.error(error_msg)
             raise ValueError(error_msg)
 
-        if num_branches != len(num_channels):
+        if num_branches != len(self.num_channels):
             error_msg = 'NUM_BRANCHES({}) must equal NUM_CHANNELS({})'.format(
-                num_branches, len(num_channels))
+                num_branches, len(self.num_channels))
             logger.error(error_msg)
             raise ValueError(error_msg)
 
@@ -416,6 +416,7 @@ class MDEQNet(nn.Module):
         
         # Inject only to the highest resolution...
         x_list = [self.stage0(x) if self.stage0 else x]
+        bsz, _, H, W = x_list[-1].shape
         for channel_count in self.num_channels[1:]:
             # ... and the rest are all zeros
             bsz, _, H, W = x_list[-1].shape
