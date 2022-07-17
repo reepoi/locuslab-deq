@@ -184,6 +184,7 @@ class MDEQModule(nn.Module):
         self.num_branches = num_branches
         self.num_channels = num_channels
         self.big_kernels = big_kernels
+        self.wnorm = False
 
         self.branches = self._make_branches(num_branches, block_class, num_blocks, num_channels, big_kernels, dropout=dropout)
         self.fuse_layers = self._make_fuse_layers()
@@ -200,6 +201,7 @@ class MDEQModule(nn.Module):
         """
         Apply weight normalization to the learnable parameters of MDEQ
         """
+        self.wnorm = True
         self.post_fuse_fns = []
         for branch, pfl in zip(self.branches, self.post_fuse_layers): #, strict=True):
             for block in branch.blocks:
